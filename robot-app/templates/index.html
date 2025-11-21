@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Robot Chef</title>
+  <link rel="stylesheet" href="/static/style.css" />
+  <style>
+    /* Ajustes mínimos para el video de intro dentro de la tarjeta */
+    .intro-wrap { margin-bottom: 12px; }
+    #intro {
+      width: 100%; max-height: 260px; border-radius: 12px; display: block;
+      background: #000; object-fit: cover;
+    }
+    .hidden { display: none !important; }
+    .step { display: none; }
+    .step.active { display: block; }
+
+    /* UI del paso de pago y elección */
+    .choices, .pay-choices {
+      display:flex; gap:12px; flex-wrap:wrap; justify-content:center;
+    }
+    .pill {
+      border: none; border-radius: 999px; padding: 10px 14px; cursor: pointer;
+      background:#0d6efd; color:#fff; font-weight:700;
+      box-shadow: 0 6px 16px rgba(0,0,0,.08);
+    }
+    .pill.secondary { background:#198754; }
+    .pill.orange { background:#fd7e14; }
+    .pill.gray { background:#64748b; }
+    .pill.outline {
+      background:#fff; color:#0f172a; border:2px solid #cbd5e1; font-weight:700;
+    }
+    .pill.active {
+      outline: 3px solid #22c55e;
+      transform: translateY(-1px);
+    }
+
+    /* Toast creativo */
+    .toast {
+      position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%);
+      background:#111827; color:#fff; padding:10px 14px; border-radius:10px;
+      border:1px solid #ffffff22; font-size:.95rem; opacity:0; pointer-events:none;
+      animation: toast .22s ease forwards;
+    }
+    @keyframes toast { to { opacity:1; } }
+
+    .note {
+      margin-top: 6px; font-size: .9rem; color:#475569;
+    }
+  </style>
+</head>
+<body>
+  <main class="container">
+    <div class="card">
+      <div class="robot">🤖</div>
+      <h1 id="title">¡Hola! Soy RoboChef</h1>
+      <p id="subtitle">Estoy listo para cocinar algo rico.</p>
+
+      <!-- Intro visible durante pasos nombre, pago y elección -->
+      <div id="intro-block" class="intro-wrap">
+        <video id="intro" src="/static/videos/intro.mp4" autoplay muted loop playsinline></video>
+      </div>
+
+      <!-- Paso 1: pedir nombre (intro visible) -->
+      <div id="step-name" class="step active">
+        <label for="name">¿Cómo te llamas?</label>
+        <input id="name" type="text" placeholder="Escribe tu nombre..." />
+        <button id="btn-name" class="pill">Continuar</button>
+        <div class="note">Sugerencia: presiona Enter para continuar</div>
+      </div>
+
+      <!-- Paso 2: método de pago (intro visible) -->
+      <div id="step-pay" class="step">
+        <p id="pay-greeting"></p>
+        <p id="pay-question">Elige tu método de pago:</p>
+        <div class="pay-choices">
+          <button class="pill outline" data-pay="tarjeta">💳 Tarjeta</button>
+          <button class="pill outline" data-pay="cash">💵 Cash</button>
+          <button class="pill outline" data-pay="transferencia">🏦 Transferencia</button>
+        </div>
+        <div class="note">Podrás cambiarlo antes de confirmar tu pedido.</div>
+        <div style="margin-top:10px; display:flex; gap:10px; justify-content:center;">
+          <button id="btn-pay-continue" class="pill secondary" disabled>Continuar</button>
+          <button id="btn-pay-skip" class="pill gray">Omitir</button>
+        </div>
+      </div>
+
+      <!-- Paso 3: elegir comida/bebida (intro visible) -->
+      <div id="step-choice" class="step">
+        <p id="greeting"></p>
+        <p id="question">
+          ¿Qué quieres que prepare: <strong>ensalada</strong>, <strong>fruta</strong> o <strong>jugo de naranja</strong>?
+        </p>
+        <div id="pay-reminder" class="note"></div>
+        <div class="choices">
+          <button class="pill secondary choice" data-choice="ensalada">Ensalada 🥗</button>
+          <button class="pill orange choice" data-choice="fruta">Fruta 🍓</button>
+          <button class="pill outline choice" data-choice="naranja">Jugo de naranja 🍊</button>
+        </div>
+      </div>
+
+      <!-- Paso 4: mostrar video final -->
+      <div id="step-video" class="step">
+        <p id="making"></p>
+        <video id="video" controls playsinline></video>
+        <div class="actions" style="margin-top:10px; display:flex; gap:8px; justify-content:center;">
+          <button id="btn-restart" class="pill gray">Volver a empezar</button>
+          <button id="btn-audio" class="pill">🔇/🔊</button>
+        </div>
+      </div>
+
+      <!-- 🚀 Paso 5: pantalla de azúcar DESPUÉS del jugo de naranja -->
+      <div id="step-azucar" class="step">
+        <p id="azucar-question"></p>
+        <video id="azucar-video" src="/static/videos/azucar.mp4" controls playsinline></video>
+        <div class="actions" style="margin-top:10px; display:flex; gap:8px; justify-content:center;">
+          <button id="btn-azucar-si" class="pill secondary">Sí, agregar azúcar</button>
+          <button id="btn-azucar-no" class="pill gray">No, gracias</button>
+        </div>
+      </div>
+      <!-- 🚀 Fin paso azúcar -->
+
+    </div>
+  </main>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script>
+    const stepName    = document.getElementById("step-name");
+    const stepPay     = document.getElementById("step-pay");
+    const stepChoice  = document.getElementById("step-choice");
+    const stepVideo   = document.getElementById("step-video");
+    const stepAzucar  = document.getElementById("step-azucar"); // 🚀 nuevo paso azúcar
+
+    const btnName     = document.getElementById("btn-name");
+    const nameInput   = document.getElementById("name");
+
+    const introWrap   = document.getElementById("intro-block");
+    const introVideo  = document.getElementById("intro");
+
+    const payGreeting = document.getElementById("pay-greeting");
+    const payQuestion = document.getElementById("pay-question");
+    const payButtons  = document.querySelectorAll('[data-pay]');
+    const btnPayContinue = document.getElementById("btn-pay-continue");
+    const btnPaySkip  = document.getElementById("btn-pay-skip");
+
+    const greeting    = document.getElementById("greeting");
+    const question    = document.getElementById("question");
+    const payReminder = document.getElementById("pay-reminder");
+
+    const making      = document.getElementById("making");
+    const videoEl     = document.getElementById("video");
+    const btnRestart  = document.getElementById("btn-restart");
+    const btnAudio    = document.getElementById("btn-audio");
+    const choiceButtons = document.querySelectorAll(".choice");
+
+    const toastEl     = document.getElementById("toast");
+
+    // 🚀 elementos de azúcar
+    const azucarQuestion = document.getElementById("azucar-question");
+    const azucarVideo    = document.getElementById("azucar-video");
+    const btnAzucarSi    = document.getElementById("btn-azucar-si");
+    const btnAzucarNo    = document.getElementById("btn-azucar-no");
+
+    // Rutas de video locales
+    const VIDEOS = {
+      ensalada: "/static/videos/ensalada.mp4",
+      fruta:    "/static/videos/fruta.mp4",
+      naranja:  "/static/videos/naranja.mp4"
+    };
+
+    // Etiquetas bonitas para mostrar/decir
+    const LABELS = {
+      ensalada: "ensalada",
+      fruta: "fruta",
+      naranja: "jugo de naranja"
+    };
+
+    // Estado simple
+    const STATE = {
+      name: "",
+      pay:  "",
+      choice: "",
+      sugar: null
+    };
+
+    function go(toId) {
+      [stepName, stepPay, stepChoice, stepVideo, stepAzucar].forEach(s => s.classList.remove("active"));
+      document.getElementById(toId).classList.add("active");
+    }
+
+    // Habla en voz (opcional)
+    function speak(text) {
+      try {
+        const u = new SpeechSynthesisUtterance(text);
+        u.lang = "es-ES";
+        u.rate = 1.05;
+        speechSynthesis.cancel();
+        speechSynthesis.speak(u);
+      } catch {}
+    }
+
+    function showToast(msg) {
+      toastEl.textContent = msg;
+      toastEl.classList.remove("hidden");
+      setTimeout(() => { toastEl.classList.add("hidden"); }, 2200);
+    }
+
+    function setActivePayButton(code) {
+      payButtons.forEach(b => b.classList.toggle("active", b.dataset.pay === code));
+    }
+
+    // ------ Paso 1: nombre ------
+    function gotoPayStep() {
+      payGreeting.textContent = `¡Perfecto, ${STATE.name}!`;
+      payQuestion.textContent = "Elige tu método de pago:";
+      if (introVideo.paused) introVideo.play().catch(()=>{});
+      speak(`Gracias ${STATE.name}. Elige tu método de pago: tarjeta, cash o transferencia.`);
+      go("step-pay");
+    }
+
+    btnName.addEventListener("click", () => {
+      const name = nameInput.value.trim();
+      if (!name) { nameInput.focus(); return; }
+      STATE.name = name;
+      gotoPayStep();
+    });
+
+    // Enter en el campo nombre
+    nameInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") btnName.click();
+    });
+
+    // ------ Paso 2: pago ------
+    let selectedPay = "";
+    let currentChoice = null; // 🚀 para saber qué eligió (ensalada/fruta/naranja)
+
+    payButtons.forEach(btn => {
+      btn.addEventListener("click", () => {
+        selectedPay = btn.dataset.pay; // tarjeta | cash | transferencia
+        setActivePayButton(selectedPay);
+        btnPayContinue.disabled = false;
+        const nice =
+          selectedPay === "cash" ? "cash" :
+          selectedPay === "tarjeta" ? "tarjeta" :
+          "transferencia";
+        showToast(`Método seleccionado: ${nice}`);
+        speak(`${STATE.name}, seleccionaste ${nice}.`);
+      });
+    });
+
+    btnPayContinue.addEventListener("click", () => {
+      STATE.pay = selectedPay || "no especificado";
+
+      greeting.textContent = `¡Mucho gusto, ${STATE.name}!`;
+      question.innerHTML = `¿Qué quieres que prepare, <strong>${STATE.name}</strong>: <strong>ensalada</strong>, <strong>fruta</strong> o <strong>jugo de naranja</strong>?`;
+      payReminder.textContent = `Método de pago: ${STATE.pay}`;
+      if (introVideo.paused) introVideo.play().catch(()=>{});
+      speak(`Listo ${STATE.name}. ¿Prefieres ensalada, fruta o jugo de naranja?`);
+      go("step-choice");
+    });
+
+    btnPaySkip.addEventListener("click", () => {
+      selectedPay = "no especificado";
+      btnPayContinue.click();
+    });
+
+    // ------ Paso 3: elección ------
+    choiceButtons.forEach(btn => {
+      btn.addEventListener("click", () => {
+        const choice = btn.dataset.choice; // "ensalada" | "fruta" | "naranja"
+        const nice = LABELS[choice] || choice;
+        STATE.choice = choice;
+        currentChoice = choice; // 🚀 guardamos elección actual
+
+        making.textContent = `Perfecto, ${STATE.name}. Preparando ${nice}… (Pago: ${STATE.pay})`;
+
+        // Ocultar intro y mostrar reproductor final
+        introWrap.classList.add("hidden");
+
+        // Cargar video final
+        videoEl.src = VIDEOS[choice];
+        videoEl.load();
+        videoEl.play().catch(()=>{ /* ignorar */ });
+
+        speak(`Perfecto ${STATE.name}. Prepararé ${nice}.`);
+        go("step-video");
+      });
+    });
+
+    // 🚀 Cuando el video principal termina, si era jugo de naranja → pasar a pantalla de azúcar
+    videoEl.addEventListener("ended", () => {
+      if (currentChoice === "naranja") {
+        azucarQuestion.textContent = `${STATE.name}, ¿te gustaría agregarle azúcar a tu jugo de naranja?`;
+        azucarVideo.currentTime = 0;
+        azucarVideo.pause(); // esperamos a que presione "Sí"
+        speak(`${STATE.name}, ¿quieres agregarle azúcar a tu jugo de naranja?`);
+        go("step-azucar");
+      }
+    });
+
+    // 🚀 Paso azúcar: botones
+    btnAzucarSi.addEventListener("click", () => {
+      STATE.sugar = true;
+      speak(`Perfecto ${STATE.name}, agregando azúcar a tu jugo de naranja.`);
+      azucarVideo.currentTime = 0;
+      azucarVideo.play().catch(()=>{});
+    });
+
+    btnAzucarNo.addEventListener("click", () => {
+      STATE.sugar = false;
+      speak(`Listo ${STATE.name}, tu jugo de naranja será sin azúcar.`);
+      go("step-video"); // volvemos a pantalla final con botón de reinicio
+    });
+
+    // Cuando termina el video de azúcar, volvemos a la pantalla final
+    azucarVideo.addEventListener("ended", () => {
+      go("step-video");
+    });
+
+    // ------ Paso 4: reproducir y reiniciar ------
+    btnRestart.addEventListener("click", () => {
+      videoEl.pause();
+      videoEl.removeAttribute("src");
+      videoEl.load();
+
+      azucarVideo.pause();
+      azucarVideo.currentTime = 0;
+
+      introWrap.classList.remove("hidden");
+      if (introVideo.paused) introVideo.play().catch(()=>{});
+
+      // Reset total
+      STATE.name = "";
+      STATE.pay  = "";
+      STATE.choice = "";
+      STATE.sugar  = null;
+      selectedPay = "";
+      currentChoice = null;
+      setActivePayButton("");
+
+      nameInput.value = "";
+      go("step-name");
+      nameInput.focus();
+      speak("Hola, soy RoboChef. ¿Cómo te llamas?");
+    });
+
+    btnAudio.addEventListener("click", () => {
+      videoEl.muted = !videoEl.muted;
+    });
+
+    // Inicio: siempre comienza en pedir nombre
+    window.addEventListener("load", () => {
+      introVideo.muted = true;
+      introVideo.play().catch(()=>{});
+      go("step-name");
+      nameInput.focus();
+      speak("Hola, soy RoboChef. ¿Cómo te llamas?");
+    });
+  </script>
+</body>
+</html>
